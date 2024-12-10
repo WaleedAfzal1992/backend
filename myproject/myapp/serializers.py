@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import Blog
+from .models import Blog, BlogPermission
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -53,3 +53,26 @@ class BlogSerializer(serializers.ModelSerializer):
         # Get the currently authenticated user from the request context
         validated_data['author'] = self.context['request'].user
         return super().create(validated_data)
+
+
+class BlogPermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BlogPermission
+        fields = ['blog', 'user', 'permission_type']
+        read_only_fields = ['blog']
+
+    def create(self, validated_data):
+        # Ensure the user has permission to grant permissions
+        request_user = self.context['request'].user
+        blog = validated_data.get('blog')
+
+        if not BlogPermission.objects.filter(blog=blog, user=request_user, permission_type='Full Access').exists():
+            raise serializers.ValidationError("You do not have permission to grant access to this blog.")
+
+        return super().create(validated_data)
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email']  # Add more fields as needed
