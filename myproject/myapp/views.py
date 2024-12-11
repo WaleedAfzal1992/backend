@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from .models import Blog, BlogPermission
 from .serializers import BlogSerializer, BlogPermissionSerializer
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db.models import Q
@@ -56,6 +56,21 @@ class IsEditorOrAuthor(BasePermission):
         return obj.author == user or BlogPermission.objects.filter(blog=obj, user=user).exists()
 
 
+@api_view(['GET'])
+def current_user(request):
+    """
+    Retrieve details of the current authenticated user.
+    """
+    user = request.user
+    if user.is_authenticated:
+        return Response({
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+        })
+    return Response({'detail': 'Authentication credentials were not provided.'}, status=401)
+
+
 class BlogViewSet(viewsets.ModelViewSet):
     queryset = Blog.objects.all()
     serializer_class = BlogSerializer
@@ -80,6 +95,10 @@ class BlogViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def grant_access(self, request, pk=None):
         blog = self.get_object()
+        # Check if the logged-in user is the author
+        if request.user != blog.author:
+            return Response({"detail": "You are not allowed to grant permissions."}, status=403)
+
         user_id = request.data.get('user_id')
         permission_type = request.data.get('permission_type')
 
@@ -123,7 +142,7 @@ class BlogViewSet(viewsets.ModelViewSet):
         blog = self.get_object()
         # Check permissions for the current user
         permission = BlogPermission.objects.filter(blog=blog, user=request.user).first()
-
+        author = request.user == blog.author  # Check if the user is the author
         # Add permission data to the response
         blog_data = BlogSerializer(blog).data
         if permission:
@@ -132,7 +151,7 @@ class BlogViewSet(viewsets.ModelViewSet):
         else:
             blog_data['can_update'] = False
             blog_data['can_delete'] = False
-
+        blog_data['author'] = author  # Add this flag to the response
         return Response(blog_data)
 
 
